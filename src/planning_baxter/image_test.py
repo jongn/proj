@@ -32,17 +32,20 @@ class image_converter:
     dst = cv2.dilate(dst,None)
 
     # Threshold for an optimal value, it may vary depending on the image.
-    img[dst>0.25*dst.max()]=[0,0,255]
+    #img[dst>0.25*dst.max()]=[0,0,255]
 
     cv2.imshow('dst', img)
     contours,h = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
+
+    rect = None
 
     for cnt in contours:
         approx = cv2.approxPolyDP(cnt,0.02*cv2.arcLength(cnt,True),True)
         if len(approx)==4:
             if cv2.contourArea(approx) > 1000 and cv2.contourArea(approx) < 10000:
               print approx
+              rect = approx
               cv2.drawContours(img2,[approx],0,(0,255,0),-1)
               #cv2.drawContours(img2,[cnt],0,(0,0,255),-1)
         """
