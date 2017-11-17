@@ -15,229 +15,109 @@ from sensor_msgs.msg import Image
 #Define the callback method which is called whenever this node receives a 
 #message on its subscribed topic. The received message is passed as the 
 #first argument to callback().
-def callback(message):
+class ar_tracking:
 
-    #Print the contents of the message to the console
-    print(rospy.get_name() + ": I heard %s" % message.markers[0].pose.pose)
+    def __init__(self):
+        self.total_markers = 2
+        self.subscriber = None
+        self.markers = None
 
-def tfcallback(message):
+    def callback(self, message):
+        if len(message.markers) == self.total_markers:
+            self.markers = message.markers
+            self.subscriber.unregister()
+            rospy.signal_shutdown("ar tags found")
 
-    print(rospy.get_name() + ": I heard %s" % [i.header.frame_id for i in message.transforms])
+    def begin_tracking(self):
+        rospy.init_node('listener', anonymous=True)
+        self.subscriber = rospy.Subscriber("/ar_pose_marker", AlvarMarkers, self.callback)
+        rospy.spin()
+        return self.markers
 
-def image_callback(message):
+class path_planning:
 
-    cv_image = CvBridge().imgmsg_to_cv2(message, desired_encoding="passthrough")
-    cv2.imshow("Image window", cv_image)
+    def __init__(self, ar_tags):
+        print (ar_tags)
 
-def listener():
-    rospy.init_node('listener', anonymous=True)
-    rospy.Subscriber("io/internal_camera/head_camera/image_raw", Image, image_callback)
-    rospy.spin()
+
+    # TODO #
+    def move(self, poses):
+        #Initialize moveit_commander
+        moveit_commander.roscpp_initialize(sys.argv)
+
+        #Start a node
+        rospy.init_node('moveit_node')
+
+        #Initialize both arms
+        robot = moveit_commander.RobotCommander()
+        scene = moveit_commander.PlanningSceneInterface()
+    #    left_arm = moveit_commander.MoveGroupCommander('left_arm')
+        right_arm = moveit_commander.MoveGroupCommander('right_arm')
+    #    left_arm.set_planner_id('RRTConnectkConfigDefault')
+    #    left_arm.set_planning_time(10)
+        right_arm.set_planner_id('RRTConnectkConfigDefault')
+        right_arm.set_planning_time(10)
+        waypoints = []
+
+        # start with the current pose
+        waypoints.append(right_arm.get_current_pose().pose)
+
+        # first orient gripper and move forward (+x)
+        wpose = geometry_msgs.msg.Pose()
+        wpose.orientation.x = 0.0
+        wpose.orientation.y = -1.0
+        wpose.orientation.z = 0.0
+        wpose.orientation.w = 0.0
+        wpose.position.x = waypoints[0].position.x
+        wpose.position.y = waypoints[0].position.y + 0.1
+        wpose.position.z = waypoints[0].position.z
+        waypoints.append(copy.deepcopy(wpose))
+
+        # second move down
+        #wpose.position.z -= 0.10
+        #waypoints.append(copy.deepcopy(wpose))
+
+        # third move to the side
+        #wpose.position.y += 0.05
+        #waypoints.append(copy.deepcopy(wpose))
+
+        ## We want the cartesian path to be interpolated at a resolution of 1 cm
+        ## which is why we will specify 0.01 as the eef_step in cartesian
+        ## translation.  We will specify the jump threshold as 0.0, effectively
+        ## disabling it.
+        (plan, fraction) = right_arm.compute_cartesian_path(
+                                   waypoints,   # waypoints to follow
+                                   0.01,        # eef_step
+                                   0.0)         # jump_threshold
+                                   
+        right_arm.execute(plan)
+
+
+        goal_1 = PoseStamped()
+        goal_1.header.frame_id = "base"
+        #x, y, and z position
+        goal_1.pose.position.x = 0.56
+        goal_1.pose.position.y = 0.31
+        goal_1.pose.position.z = -0.24
+        
+        #Orientation as a quaternion
+        goal_1.pose.orientation.x = 0.0
+        goal_1.pose.orientation.y = -1.0
+        goal_1.pose.orientation.z = 0.0
+        goal_1.pose.orientation.w = 0.0
+        #Set the goal state to the pose you just defined
+        right_arm.set_pose_target(goal_1)
+        #Set the start state for the right arm
+        right_arm.set_start_state_to_current_state()
+        #Plan a path
+        right_plan = right_arm.plan()
+        #Execute the plan
+        right_arm.execute(right_plan)
+
 
 def main():
-    listener()
-    """
-    #Initialize moveit_commander
-    moveit_commander.roscpp_initialize(sys.argv)
-
-    #Start a node
-    rospy.init_node('moveit_node')
-
-    #Initialize both arms
-    robot = moveit_commander.RobotCommander()
-    scene = moveit_commander.PlanningSceneInterface()
-#    left_arm = moveit_commander.MoveGroupCommander('left_arm')
-    right_arm = moveit_commander.MoveGroupCommander('left_arm')
-#    left_arm.set_planner_id('RRTConnectkConfigDefault')
-#    left_arm.set_planning_time(10)
-    right_arm.set_planner_id('RRTConnectkConfigDefault')
-    right_arm.set_planning_time(10)
-
-    #First goal pose ------------------------------------------------------
-    goal_1 = PoseStamped()
-    goal_1.header.frame_id = "base"
-
-    #x, y, and z position
-    goal_1.pose.position.x = 0.56
-    goal_1.pose.position.y = 0.31
-    goal_1.pose.position.z = -0.24
-    
-    #Orientation as a quaternion
-    goal_1.pose.orientation.x = 0.0
-    goal_1.pose.orientation.y = -1.0
-    goal_1.pose.orientation.z = 0.0
-    goal_1.pose.orientation.w = 0.0
-
-    #Set the goal state to the pose you just defined
-    right_arm.set_pose_target(goal_1)
-
-    #Set the start state for the right arm
-    right_arm.set_start_state_to_current_state()
-
-    #Plan a path
-    right_plan = right_arm.plan()
-
-    #Execute the plan
-    raw_input('Press <Enter> to move the right arm to goal pose 1 (path constraints are never enforced during this motion): ')
-    right_arm.execute(right_plan)
-
-    #First goal pose ------------------------------------------------------
-    goal_1 = PoseStamped()
-    goal_1.header.frame_id = "base"
-
-    #x, y, and z position
-    goal_1.pose.position.x = 0.56
-    goal_1.pose.position.y = 0.31
-    goal_1.pose.position.z = -0.24
-    
-    #Orientation as a quaternion
-    goal_1.pose.orientation.x = 0.0
-    goal_1.pose.orientation.y = -1.0
-    goal_1.pose.orientation.z = 0.0
-    goal_1.pose.orientation.w = 0.0
-
-    #Set the goal state to the pose you just defined
-    right_arm.set_pose_target(goal_1)
-
-    #Set the start state for the right arm
-    right_arm.set_start_state_to_current_state()
-
-    #Plan a path
-    right_plan = right_arm.plan()
-
-    #Execute the plan
-    raw_input('Press <Enter> to move the right arm to goal pose 1 (path constraints are never enforced during this motion): ')
-    right_arm.execute(right_plan)
-
-    #Second goal pose -----------------------------------------------------
-    rospy.sleep(2.0)
-    goal_2 = PoseStamped()
-    goal_2.header.frame_id = "base"
-
-    #x, y, and z position
-    goal_2.pose.position.x = 0.48
-    goal_2.pose.position.y = 0
-    goal_2.pose.position.z = -0.24
-    
-    #Orientation as a quaternion
-    goal_2.pose.orientation.x = 0.0
-    goal_2.pose.orientation.y = -1.0
-    goal_2.pose.orientation.z = 0.0
-    goal_2.pose.orientation.w = 0.0
-
-    #Set the goal state to the pose you just defined
-    right_arm.set_pose_target(goal_2)
-
-    #Set the start state for the right arm
-    right_arm.set_start_state_to_current_state()
-
-    # #Create a path constraint for the arm
-    # #UNCOMMENT TO ENABLE ORIENTATION CONSTRAINTS
-    # orien_const = OrientationConstraint()
-    # orien_const.link_name = "right_gripper";
-    # orien_const.header.frame_id = "base";
-    # orien_const.orientation.y = -1.0;
-    # orien_const.absolute_x_axis_tolerance = 0.1;
-    # orien_const.absolute_y_axis_tolerance = 0.1;
-    # orien_const.absolute_z_axis_tolerance = 0.1;
-    # orien_const.weight = 1.0;
-    # consts = Constraints()
-    # consts.orientation_constraints = [orien_const]
-    # right_arm.set_path_constraints(consts)
-
-    #Plan a path
-    right_plan = right_arm.plan()
-
-    #Execute the plan
-    raw_input('Press <Enter> to move the right arm to goal pose 2: ')
-    right_arm.execute(right_plan)
-    """
-
-
-
-
-    """
-    #Third goal pose -----------------------------------------------------
-    rospy.sleep(2.0)
-    goal_3 = PoseStamped()
-    goal_3.header.frame_id = "base"
-
-    #x, y, and z position
-    goal_3.pose.position.x = 0.6
-    goal_3.pose.position.y = -0.1
-    goal_3.pose.position.z = 0.1
-    
-    #Orientation as a quaternion
-    goal_3.pose.orientation.x = 0.0
-    goal_3.pose.orientation.y = -1.0
-    goal_3.pose.orientation.z = 0.0
-    goal_3.pose.orientation.w = 0.0
-
-    #Set the goal state to the pose you just defined
-    right_arm.set_pose_target(goal_3)
-
-    #Set the start state for the right arm
-    right_arm.set_start_state_to_current_state()
-
-    # #Create a path constraint for the arm
-    # #UNCOMMENT TO ENABLE ORIENTATION CONSTRAINTS
-    # orien_const = OrientationConstraint()
-    # orien_const.link_name = "right_gripper";
-    # orien_const.header.frame_id = "base";
-    # orien_const.orientation.y = -1.0;
-    # orien_const.absolute_x_axis_tolerance = 0.1;
-    # orien_const.absolute_y_axis_tolerance = 0.1;
-    # orien_const.absolute_z_axis_tolerance = 0.1;
-    # orien_const.weight = 1.0;
-    # consts = Constraints()
-    # consts.orientation_constraints = [orien_const]
-    # right_arm.set_path_constraints(consts)
-
-    #Plan a path
-    right_plan = right_arm.plan()
-
-    #Execute the plan
-    raw_input('Press <Enter> to move the right arm to goal pose 3: ')
-    right_arm.execute(right_plan)
-
-
-
-    raw_input('Cartesian path')
-    waypoints = []
-
-    # start with the current pose
-    waypoints.append(right_arm.get_current_pose().pose)
-
-    # first orient gripper and move forward (+x)
-    wpose = geometry_msgs.msg.Pose()
-    wpose.orientation.x = 0.0
-    wpose.orientation.y = -1.0
-    wpose.orientation.z = 0.0
-    wpose.orientation.w = 0.0
-    wpose.position.x = waypoints[0].position.x
-    wpose.position.y = waypoints[0].position.y + 0.1
-    wpose.position.z = waypoints[0].position.z
-    waypoints.append(copy.deepcopy(wpose))
-
-    # second move down
-    #wpose.position.z -= 0.10
-    #waypoints.append(copy.deepcopy(wpose))
-
-    # third move to the side
-    #wpose.position.y += 0.05
-    #waypoints.append(copy.deepcopy(wpose))
-
-    ## We want the cartesian path to be interpolated at a resolution of 1 cm
-    ## which is why we will specify 0.01 as the eef_step in cartesian
-    ## translation.  We will specify the jump threshold as 0.0, effectively
-    ## disabling it.
-    (plan3, fraction) = right_arm.compute_cartesian_path(
-                               waypoints,   # waypoints to follow
-                               0.01,        # eef_step
-                               0.0)         # jump_threshold
-                               
-    right_arm.execute(plan3)
-    """
+    tracker = ar_tracking()
+    print (tracker.begin_tracking())
 
 if __name__ == '__main__':
     main()
