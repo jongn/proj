@@ -119,5 +119,10 @@ def main():
     tracker = ar_tracking()
     print (tracker.begin_tracking())
 
+    # get image
+    # homeography or w/e its called
+    # plan drawing
+    # do drawing on whiteboard
+
 if __name__ == '__main__':
     main()
