@@ -5,10 +5,38 @@ import rospy
 import moveit_commander
 import moveit_msgs.msg
 import geometry_msgs.msg
+import cv2
+from cv_bridge import CvBridge, CvBridgeError
 from moveit_msgs.msg import OrientationConstraint, Constraints
 from geometry_msgs.msg import PoseStamped
+from ar_track_alvar_msgs.msg import AlvarMarker, AlvarMarkers
+from tf2_msgs.msg import TFMessage
+from sensor_msgs.msg import Image
+#Define the callback method which is called whenever this node receives a 
+#message on its subscribed topic. The received message is passed as the 
+#first argument to callback().
+def callback(message):
+
+    #Print the contents of the message to the console
+    print(rospy.get_name() + ": I heard %s" % message.markers[0].pose.pose)
+
+def tfcallback(message):
+
+    print(rospy.get_name() + ": I heard %s" % [i.header.frame_id for i in message.transforms])
+
+def image_callback(message):
+
+    cv_image = CvBridge().imgmsg_to_cv2(message, desired_encoding="passthrough")
+    cv2.imshow("Image window", cv_image)
+
+def listener():
+    rospy.init_node('listener', anonymous=True)
+    rospy.Subscriber("io/internal_camera/head_camera/image_raw", Image, image_callback)
+    rospy.spin()
 
 def main():
+    listener()
+    """
     #Initialize moveit_commander
     moveit_commander.roscpp_initialize(sys.argv)
 
@@ -123,6 +151,10 @@ def main():
     #Execute the plan
     raw_input('Press <Enter> to move the right arm to goal pose 2: ')
     right_arm.execute(right_plan)
+    """
+
+
+
 
     """
     #Third goal pose -----------------------------------------------------
