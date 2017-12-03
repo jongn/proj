@@ -23,6 +23,7 @@ class ar_tracking:
         self.markers = None
 
     def callback(self, message):
+        print message.markers
         if len(message.markers) == self.total_markers:
             self.markers = message.markers
             self.subscriber.unregister()
@@ -32,7 +33,29 @@ class ar_tracking:
         rospy.init_node('listener', anonymous=True)
         self.subscriber = rospy.Subscriber("/ar_pose_marker", AlvarMarkers, self.callback)
         rospy.spin()
-        return self.markers
+        print self.markers
+        return
+        # self.marker_transform()
+
+    def marker_transform(self):
+        rospy.init_node('transform_listener')
+
+        tfBuffer = tf2_ros.Buffer()
+        listener = tf2_ros.TransformListener(tfBuffer)
+
+        tableToBoardTransform = rospy.Publisher('/t2b_transform', geometry_msgs.msg.Transform, queue_size=1)
+
+        rate = rospy.Rate(10.0)
+        while not rospy.is_shutdown():
+            try:
+                trans = tfBuffer.lookup_transform(self.markers[0].header.frame_id, self.markers[1].header.frame_id, rospy.Time())
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                rate.sleep()
+                continue
+
+            tableToBoardTransform.publish(trans)
+
+
 
 class path_planning:
 
@@ -41,12 +64,13 @@ class path_planning:
 
 
     # TODO #
-    def move(self, poses):
+    def move(self, pose):
+        print pose
         #Initialize moveit_commander
         moveit_commander.roscpp_initialize(sys.argv)
 
         #Start a node
-        rospy.init_node('moveit_node')
+        # rospy.init_node('moveit_node')
 
         #Initialize both arms
         robot = moveit_commander.RobotCommander()
@@ -59,6 +83,39 @@ class path_planning:
         right_arm.set_planning_time(10)
         waypoints = []
 
+        goal_1 = PoseStamped()
+        goal_1.header.frame_id = "base"
+
+        #x, y, and z position
+        # goal_1.pose=pose
+
+        #     #x, y, and z position
+        goal_1.pose.position.x = pose.position.x - 0.05
+        goal_1.pose.position.y = pose.position.y
+        goal_1.pose.position.z = pose.position.z
+        
+        # #Orientation as a quaternion
+        goal_1.pose.orientation.x = -pose.orientation.x
+        goal_1.pose.orientation.y = -pose.orientation.y
+        goal_1.pose.orientation.z = pose.orientation.z
+        goal_1.pose.orientation.w = pose.orientation.w
+
+        # goal_1.position.orientation =
+
+        #Set the goal state to the pose you just defined
+        right_arm.set_pose_target(goal_1)
+
+        #Set the start state for the right arm
+        right_arm.set_start_state_to_current_state()
+
+        #Plan a path
+        right_plan = right_arm.plan()
+
+        #Execute the plan
+        raw_input('Press <Enter> to move the right arm to goal pose 1 (path constraints are never enforced during this motion): ')
+        right_arm.execute(right_plan)
+
+        """
         # start with the current pose
         waypoints.append(right_arm.get_current_pose().pose)
 
@@ -90,7 +147,7 @@ class path_planning:
                                    0.01,        # eef_step
                                    0.0)         # jump_threshold
                                    
-        right_arm.execute(plan)
+        # right_arm.execute(plan)
 
 
         goal_1 = PoseStamped()
@@ -113,11 +170,16 @@ class path_planning:
         right_plan = right_arm.plan()
         #Execute the plan
         right_arm.execute(right_plan)
+        """
 
 
 def main():
     tracker = ar_tracking()
-    print (tracker.begin_tracking())
+    # print (tracker.begin_tracking())
+    tracker.begin_tracking()
+    planner = path_planning(tracker.markers)
+    # print tracker.markers[-1]
+    planner.move(tracker.markers[0].pose.pose)
 
     # get image
     # homeography or w/e its called
